@@ -10,8 +10,12 @@ on:
     - cron: '0 1 * * 1'
   push:
     branches: [ "main" ]
+    paths:
+      - 'bitnami/redis/**'
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'bitnami/redis/**'
   workflow_dispatch:
 
 concurrency:
@@ -36,7 +40,8 @@ jobs:
         shell: bash
         run: |
           # Build records: {"app","os","context","version"}; version read from Dockerfile label
-          mapfile -t files < <(find bitnami -type f -name Dockerfile | sort)
+          # Filter to only include Redis containers
+          mapfile -t files < <(find bitnami/redis -type f -name Dockerfile | sort)
           for f in "${files[@]}"; do
             ctx="$(dirname "$f")"
             app="$(echo "$ctx" | awk -F/ '{print $2}')"
@@ -76,7 +81,7 @@ jobs:
             head_sha="${{ github.sha }}"
           fi
 
-          # Get changed files and map to contexts under bitnami/*/*/*
+          # Get changed files and map to contexts under bitnami/redis only
           changed_files="$(git diff --name-only "$base_sha" "$head_sha")"
 
           # Build a set of candidate contexts
@@ -88,7 +93,7 @@ jobs:
           )"
 
           changed_contexts="$(
-            awk -F/ '/^bitnami\// && NF>=4 { print $1"/"$2"/"$3"/"$4 }' <<<"$changed_files" \
+            awk -F/ '/^bitnami\/redis\// && NF>=4 { print $1"/"$2"/"$3"/"$4 }' <<<"$changed_files" \
               | sort -u \
               | jq -R -s --argjson dict "$all_with_context" '
                   split("\n")

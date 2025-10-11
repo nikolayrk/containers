@@ -35,16 +35,23 @@ jobs:
         run: |
           files_changed="$(gh api --paginate /repos/${GITHUB_REPOSITORY}/pulls/${PULL_REQUEST_NUMBER}/files | jq -r '.[] | .filename')"
           # Adding || true to avoid "Process exited with code 1" errors
-          flavors=($(echo "$files_changed" | xargs dirname | grep -o "^bitnami/[^/]*/[^/]*/[^/]*" | sort | uniq || true))
-          assets=($(echo "$files_changed" | xargs dirname | sed -nr "s|bitnami/([^/]*)/.*|\1|p" | sort | uniq || true))
-          non_readme_files=$(echo "$files_changed" | grep -vc "\.md" || true)
-          dockerfiles=($(echo "$files_changed" | grep -oE ".*/Dockerfile$" | sort | uniq || true))
+          # Filter to only process Redis-related changes
+          flavors=($(echo "$files_changed" | xargs dirname | grep -o "^bitnami/redis/[^/]*/[^/]*" | sort | uniq || true))
+          assets=($(echo "$files_changed" | xargs dirname | sed -nr "s|bitnami/(redis)/.*|\1|p" | sort | uniq || true))
+          non_readme_files=$(echo "$files_changed" | grep -v "\.md" | grep "^bitnami/redis/" | wc -l || true)
+          dockerfiles=($(echo "$files_changed" | grep -oE "bitnami/redis/.*/Dockerfile$" | sort | uniq || true))
 
           if [[ "$non_readme_files" -le "0" ]]; then
             # The only changes are .md files -> SKIP
             echo "result=skip" >> $GITHUB_OUTPUT
+          elif [[ "${#assets[@]}" -eq "0" ]]; then
+            # No Redis assets found -> SKIP
+            echo "result=skip" >> $GITHUB_OUTPUT
           elif [[ "${#assets[@]}" -ge "5" ]]; then
             echo "Maximun number of assets reached. You are currently modifying: ${assets[@]}"
+            echo "result=skip" >> $GITHUB_OUTPUT
+          elif [[ "${assets[0]}" != "redis" ]]; then
+            # Only process Redis assets -> SKIP
             echo "result=skip" >> $GITHUB_OUTPUT
           else
             containers_json=$(printf "%s\n" "${flavors[@]}" | jq -R . | jq -cs .)
@@ -74,9 +81,14 @@ jobs:
           DOCKERFILES: "${{ needs.get-containers.outputs.dockerfiles }}"
         run: |
           if [[ -n "${DOCKERFILES}" ]]; then
-            # Overwrite configuration file to analyze only changed dockerfiles
-            yq -i '. | .header.paths=env(DOCKERFILES)' .licenserc.yaml
-            echo "result=success" >> $GITHUB_OUTPUT
+            # Filter to only Redis dockerfiles and overwrite configuration file
+            redis_dockerfiles=$(echo "${DOCKERFILES}" | jq -r '.[]' | grep "^bitnami/redis/" | jq -R . | jq -cs .)
+            if [[ "$redis_dockerfiles" != "[]" ]]; then
+              yq -i '. | .header.paths=env(DOCKERFILES)' .licenserc.yaml
+              echo "result=success" >> $GITHUB_OUTPUT
+            else
+              echo "result=skip" >> $GITHUB_OUTPUT
+            fi
           else
             echo "result=skip" >> $GITHUB_OUTPUT
           fi
