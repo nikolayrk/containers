@@ -6,8 +6,8 @@ name: '[CI/CD] Docker prepare and publish'
 # documentation.
 
 on:
-  schedule:
-    - cron: '0 1 * * 1'
+  # schedule:
+  #   - cron: '0 1 * * 1'
   push:
     branches: [ "main" ]
   pull_request:
